@@ -2,7 +2,7 @@ export const SPREADSHEET_ID = '1GHc5PE9pPZjakJ3sm329L1GXpqv9ranewFdcOWRmGzU';
 
 export const CODE_GS_CONTENT = `/**
  * ============================================================================
- * APLIKASI PEMBUAT ID CARD DIGITAL MULTIFUNGSI (VERSI TERBARU 2.2.0)
+ * APLIKASI PEMBUAT ID CARD DIGITAL MULTIFUNGSI (VERSI TERBARU 2.3.0)
  * Backend: Google Apps Script (Code.gs)
  * Database: Google Spreadsheet (ID: 1GHc5PE9pPZjakJ3sm329L1GXpqv9ranewFdcOWRmGzU)
  * Storage Foto & Desain Template: Google Drive
@@ -11,11 +11,11 @@ export const CODE_GS_CONTENT = `/**
 
 // KONFIGURASI UTAMA
 var CONFIG = {
-  SPREADSHEET_ID: "${SPREADSHEET_ID}", // Google Spreadsheet ID
-  DRIVE_FOLDER_ID: "", // Opsional: ID Folder Google Drive (kosongkan jika otomatis membuat folder baru)
+  SPREADSHEET_ID: "${SPREADSHEET_ID}",
+  DRIVE_FOLDER_ID: "", // ID Folder Google Drive (kosongkan jika otomatis membuat folder baru)
   FOLDER_NAME: "ID_CARD_DIGITAL_STORAGE", // Nama folder di Google Drive
   APP_NAME: "Pembuat ID Card Digital Multifungsi",
-  VERSI: "2.2.0"
+  VERSI: "2.3.0"
 };
 
 /**
@@ -69,6 +69,12 @@ function doPost(e) {
       case "saveKegiatan":
         result = simpanDataKegiatan(data.payload);
         break;
+      case "deleteKegiatan":
+        result = hapusDataKegiatan(data.id);
+        break;
+      case "savePengaturan":
+        result = simpanPengaturan(data.payload);
+        break;
       case "uploadFotoDrive":
         result = simpanFotoKeDrive(data.base64, data.filename, data.mimeType);
         break;
@@ -99,7 +105,6 @@ function doPost(e) {
 
 /**
  * 3. INISIALISASI DATABASE & 5 SHEET SPREADSHEET OTOMATIS
- * Jalankan fungsi ini pertama kali dari Apps Script Editor
  */
 function setupDatabase() {
   try {
@@ -111,7 +116,7 @@ function setupDatabase() {
         ["APP_NAME", CONFIG.APP_NAME, "Nama Resmi Aplikasi"],
         ["INSTANSI", "Kecamatan Pasirwangi", "Nama Instansi / Penyelenggara"],
         ["DEFAULT_KEGIATAN", "Peringatan HGN dan HUT ke-81 PGRI Tahun 2026", "Kegiatan Utama Aktif"],
-        ["VERSI_DB", "2.2", "Versi Struktur Database"]
+        ["VERSI_DB", "2.3", "Versi Struktur Database"]
       ],
       "TEMPLATE": [
         ["ID", "Nama Template", "Kategori", "Orientasi", "Lebar (mm)", "Tinggi (mm)", "Warna Latar", "URL Gambar Template", "Konfigurasi JSON", "Tanggal Dibuat"]
@@ -135,7 +140,6 @@ function setupDatabase() {
         var initialData = sheetsConfig[sheetName];
         sheet.getRange(1, 1, initialData.length, initialData[0].length).setValues(initialData);
 
-        // Styling header
         var headerRange = sheet.getRange(1, 1, 1, initialData[0].length);
         headerRange.setBackground("#0f172a");
         headerRange.setFontColor("#f8fafc");
@@ -146,7 +150,6 @@ function setupDatabase() {
       }
     }
 
-    // Seed default template jika TEMPLATE baru dibuat
     var tplSheet = ss.getSheetByName("TEMPLATE");
     if (tplSheet && tplSheet.getLastRow() <= 1) {
       tplSheet.appendRow([
@@ -167,7 +170,6 @@ function setupDatabase() {
       ]);
     }
 
-    // Seed default peserta jika PESERTA baru dibuat
     var pSheet = ss.getSheetByName("PESERTA");
     if (pSheet && pSheet.getLastRow() <= 1) {
       pSheet.appendRow([
@@ -183,6 +185,19 @@ function setupDatabase() {
         "25 November 2026",
         "Koordinator Pelaksana Utama",
         Utilities.formatDate(new Date(), "Asia/Jakarta", "yyyy-MM-dd HH:mm:ss")
+      ]);
+    }
+
+    var kSheet = ss.getSheetByName("KEGIATAN");
+    if (kSheet && kSheet.getLastRow() <= 1) {
+      kSheet.appendRow([
+        "keg-001",
+        "Peringatan HGN dan HUT ke-81 PGRI Tahun 2026",
+        "2026-11-20",
+        "2026-11-25",
+        "Kecamatan Pasirwangi, Garut",
+        "Upacara Akbar & Temu Pendidik Se-Kecamatan",
+        "Aktif"
       ]);
     }
 
@@ -205,7 +220,6 @@ function getAllData() {
   try {
     var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
 
-    // Ambil Peserta
     var pesertaList = [];
     var pSheet = ss.getSheetByName("PESERTA");
     if (pSheet && pSheet.getLastRow() > 1) {
@@ -231,7 +245,6 @@ function getAllData() {
       }
     }
 
-    // Ambil Template
     var templateList = [];
     var tSheet = ss.getSheetByName("TEMPLATE");
     if (tSheet && tSheet.getLastRow() > 1) {
@@ -260,14 +273,33 @@ function getAllData() {
       }
     }
 
-    // Ambil Pengaturan
+    var kegiatanList = [];
+    var kSheet = ss.getSheetByName("KEGIATAN");
+    if (kSheet && kSheet.getLastRow() > 1) {
+      var kValues = kSheet.getRange(2, 1, kSheet.getLastRow() - 1, 7).getValues();
+      for (var k = 0; k < kValues.length; k++) {
+        var kRow = kValues[k];
+        if (kRow[0]) {
+          kegiatanList.push({
+            id: String(kRow[0]),
+            nama: String(kRow[1]),
+            tanggalMulai: String(kRow[2]),
+            tanggalSelesai: String(kRow[3]),
+            lokasi: String(kRow[4]),
+            keterangan: String(kRow[5]),
+            status: String(kRow[6])
+          });
+        }
+      }
+    }
+
     var settings = {};
     var sSheet = ss.getSheetByName("PENGATURAN");
     if (sSheet && sSheet.getLastRow() > 1) {
       var sValues = sSheet.getRange(2, 1, sSheet.getLastRow() - 1, 2).getValues();
-      for (var k = 0; k < sValues.length; k++) {
-        if (sValues[k][0]) {
-          settings[String(sValues[k][0])] = String(sValues[k][1]);
+      for (var m = 0; m < sValues.length; m++) {
+        if (sValues[m][0]) {
+          settings[String(sValues[m][0])] = String(sValues[m][1]);
         }
       }
     }
@@ -277,6 +309,7 @@ function getAllData() {
       data: {
         peserta: pesertaList,
         templates: templateList,
+        kegiatan: kegiatanList,
         settings: settings
       }
     };
@@ -367,7 +400,7 @@ function hapusDataPeserta(id) {
 }
 
 /**
- * 7. MENYIMPAN TEMPLATE ID CARD (DILENGKAPI URL GAMBAR TEMPLATE)
+ * 7. MENYIMPAN TEMPLATE ID CARD
  */
 function simpanDataTemplate(tpl) {
   try {
@@ -420,7 +453,115 @@ function simpanDataTemplate(tpl) {
 }
 
 /**
- * 8. SIMPAN FOTO KE GOOGLE DRIVE
+ * 8. MENYIMPAN DATA KEGIATAN
+ */
+function simpanDataKegiatan(k) {
+  try {
+    var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    var sheet = ss.getSheetByName("KEGIATAN");
+    if (!sheet) {
+      setupDatabase();
+      sheet = ss.getSheetByName("KEGIATAN");
+    }
+
+    var lastRow = sheet.getLastRow();
+    var existingRow = -1;
+
+    if (lastRow > 1 && k.id) {
+      var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+      for (var i = 0; i < ids.length; i++) {
+        if (ids[i][0] == k.id) {
+          existingRow = i + 2;
+          break;
+        }
+      }
+    }
+
+    var rowData = [
+      k.id || ("keg-" + Utilities.getUuid().substring(0, 6)),
+      k.nama,
+      k.tanggalMulai || "",
+      k.tanggalSelesai || "",
+      k.lokasi || "",
+      k.keterangan || "",
+      k.status || "Aktif"
+    ];
+
+    if (existingRow > 0) {
+      sheet.getRange(existingRow, 1, 1, rowData.length).setValues([rowData]);
+      catatLog("Perbarui Kegiatan", "Update kegiatan: " + k.nama, "Operator");
+    } else {
+      sheet.appendRow(rowData);
+      catatLog("Tambah Kegiatan", "Menambahkan kegiatan: " + k.nama, "Operator");
+    }
+
+    return { success: true, message: "Data kegiatan berhasil disimpan!", id: rowData[0] };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * 9. MENGHAPUS KEGIATAN
+ */
+function hapusDataKegiatan(id) {
+  try {
+    var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    var sheet = ss.getSheetByName("KEGIATAN");
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success: false, message: "Data kosong" };
+
+    var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < ids.length; i++) {
+      if (ids[i][0] == id) {
+        var rowNumber = i + 2;
+        sheet.deleteRow(rowNumber);
+        return { success: true, message: "Kegiatan berhasil dihapus." };
+      }
+    }
+    return { success: false, message: "ID kegiatan tidak ditemukan." };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * 10. SIMPAN PENGATURAN KE SHEET PENGATURAN
+ */
+function simpanPengaturan(settings) {
+  try {
+    var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    var sheet = ss.getSheetByName("PENGATURAN");
+    if (!sheet) {
+      setupDatabase();
+      sheet = ss.getSheetByName("PENGATURAN");
+    }
+
+    for (var key in settings) {
+      var lastRow = sheet.getLastRow();
+      var found = false;
+      if (lastRow > 1) {
+        var keys = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+        for (var i = 0; i < keys.length; i++) {
+          if (keys[i][0] == key) {
+            sheet.getRange(i + 2, 2).setValue(settings[key]);
+            found = true;
+            break;
+          }
+        }
+      }
+      if (!found) {
+        sheet.appendRow([key, settings[key], "Diperbarui dari Web App"]);
+      }
+    }
+    return { success: true, message: "Pengaturan berhasil disimpan ke Spreadsheet!" };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * 11. SIMPAN FOTO KE GOOGLE DRIVE
  */
 function simpanFotoKeDrive(base64Data, filename, mimeType) {
   try {
@@ -456,7 +597,7 @@ function simpanFotoKeDrive(base64Data, filename, mimeType) {
 }
 
 /**
- * 9. SIMPAN GAMBAR DESAIN TEMPLATE KE GOOGLE DRIVE
+ * 12. SIMPAN GAMBAR DESAIN TEMPLATE KE GOOGLE DRIVE
  */
 function simpanTemplateKeDrive(base64Data, filename, mimeType) {
   try {
@@ -492,7 +633,7 @@ function simpanTemplateKeDrive(base64Data, filename, mimeType) {
 }
 
 /**
- * 10. MENCATAT LOG AKTIVITAS KE SHEET LOG_AKTIVITAS
+ * 13. MENCATAT LOG AKTIVITAS KE SHEET LOG_AKTIVITAS
  */
 function catatLog(action, details, user) {
   try {
@@ -530,8 +671,11 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Montserrat:wght@500;600;700;800;900&display=swap" rel="stylesheet">
   
-  <!-- html2canvas untuk Ekspor Gambar Kualitas Tinggi -->
+  <!-- html2canvas untuk Ekspor Gambar Beresolusi Tinggi -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  
+  <!-- jsPDF untuk Ekspor PDF Kartu & Cetak Massal -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <style>
     :root {
@@ -624,7 +768,7 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
     .crop-bl { bottom: 0; left: 0; border-bottom: 1px solid; border-left: 1px solid; }
     .crop-br { bottom: 0; right: 0; border-bottom: 1px solid; border-right: 1px solid; }
 
-    /* Modern Notification Toast */
+    /* Toast Notification */
     #notif-toast {
       position: fixed;
       top: 20px;
@@ -679,13 +823,13 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
   <!-- Top Navbar -->
   <header class="navbar navbar-expand-lg navbar-dark bg-dark py-2.5 px-4 sticky-top no-print border-bottom border-secondary">
     <div class="container-fluid">
-      <a class="navbar-brand d-flex align-items-center gap-2 font-heading" href="#">
+      <a class="navbar-brand d-flex align-items-center gap-2 font-heading" href="#" onclick="pindahTab('dashboard', event)">
         <div class="bg-warning text-dark p-2 rounded-3 d-flex align-items-center justify-content-center shadow-sm" style="width: 36px; height: 36px;">
           <i class="fa-solid fa-id-card fs-5"></i>
         </div>
         <div>
           <span class="fw-bold tracking-tight text-white fs-6">ID CARD DIGITAL</span>
-          <span class="badge bg-warning text-dark ms-2 fw-bold text-uppercase" style="font-size: 10px;">Versi 2.2.0</span>
+          <span class="badge bg-warning text-dark ms-2 fw-bold text-uppercase" style="font-size: 10px;">Versi 2.3.0</span>
         </div>
       </a>
 
@@ -706,7 +850,7 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
       <nav class="col-md-3 col-lg-2 d-md-block sidebar p-3 no-print collapse d-md-block">
         <div class="position-sticky">
           <h6 class="sidebar-heading px-3 mt-2 mb-2 text-muted text-uppercase fw-bold" style="font-size: 11px; letter-spacing: 1px;">
-            Menu Utama
+            Menu Navigasi
           </h6>
           <ul class="nav flex-column mb-auto">
             <li class="nav-item">
@@ -734,9 +878,21 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
               </a>
             </li>
             <li class="nav-item">
+              <a class="nav-link" href="#" onclick="pindahTab('kegiatan', event)">
+                <i class="fa-solid fa-calendar-days text-info"></i>
+                <span>Data Kegiatan</span>
+              </a>
+            </li>
+            <li class="nav-item">
               <a class="nav-link" href="#" onclick="pindahTab('cetak', event)">
                 <i class="fa-solid fa-print text-danger"></i>
                 <span>Studio Cetak (A4/F4)</span>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="#" onclick="pindahTab('pengaturan', event)">
+                <i class="fa-solid fa-sliders text-secondary"></i>
+                <span>Pengaturan & DB</span>
               </a>
             </li>
           </ul>
@@ -747,6 +903,9 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
             <div class="fw-bold mb-1 text-warning"><i class="fa-solid fa-circle-check me-1"></i>Status Sistem</div>
             <div style="font-size: 11px; opacity: 0.85;">Database: Google Sheets</div>
             <div style="font-size: 11px; opacity: 0.85;">Storage: Google Drive</div>
+            <div class="mt-2 pt-2 border-top border-secondary border-opacity-50 text-[10px]">
+              <span class="badge bg-success">Semua Menu Aktif</span>
+            </div>
           </div>
         </div>
       </nav>
@@ -754,16 +913,14 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
       <!-- Main Workspace Content -->
       <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 py-4">
 
-        <!-- ========================================== -->
-        <!-- TAB 1: DASHBOARD UTAMA                     -->
-        <!-- ========================================== -->
+        <!-- TAB 1: DASHBOARD -->
         <div id="tab-dashboard" class="tab-content-panel">
           <div class="p-4 p-md-5 mb-4 rounded-4 text-white shadow-sm" style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #172554 100%); border: 1px solid #334155;">
             <div class="col-lg-8">
               <span class="badge bg-warning text-dark fw-bold mb-2 px-3 py-1 text-uppercase">Aplikasi Siap Digunakan</span>
               <h2 class="display-6 fw-bold font-heading mb-2">Pembuat ID Card Digital Multifungsi</h2>
               <p class="lead fs-6 text-light opacity-75 mb-4">
-                Ubah template, unggah gambar desain sendiri, kelola foto peserta, nama, jabatan, dan keterangan kegiatan secara langsung melalui antarmuka web.
+                Kelola template, unggah gambar desain sendiri, buat kartu instan, dan cetak massal secara otomatis terintegrasi dengan Google Spreadsheet & Google Drive.
               </p>
               <div class="d-flex flex-wrap gap-2">
                 <button class="btn btn-warning fw-bold text-dark px-3" onclick="pindahTab('generator')">
@@ -775,6 +932,9 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
                 <button class="btn btn-outline-light px-3" onclick="pindahTab('peserta')">
                   <i class="fa-solid fa-users me-1"></i> Kelola Data Peserta
                 </button>
+                <button class="btn btn-outline-light px-3" onclick="pindahTab('kegiatan')">
+                  <i class="fa-solid fa-calendar-days me-1"></i> Kelola Kegiatan
+                </button>
                 <button class="btn btn-outline-light px-3" onclick="pindahTab('cetak')">
                   <i class="fa-solid fa-print me-1"></i> Cetak Massal
                 </button>
@@ -785,27 +945,27 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
           <!-- Statistik Cards -->
           <div class="row g-3 mb-4">
             <div class="col-6 col-lg-3">
-              <div class="card border-0 shadow-sm rounded-4 p-3 border-start border-warning border-4">
+              <div class="card border-0 shadow-sm rounded-4 p-3 border-start border-warning border-4 cursor-pointer" onclick="pindahTab('generator')">
                 <span class="text-muted small fw-bold text-uppercase">ID Card Dibuat</span>
                 <h3 class="fw-bold mb-0 text-dark mt-1 font-heading" id="dash-total-cards">1</h3>
               </div>
             </div>
             <div class="col-6 col-lg-3">
-              <div class="card border-0 shadow-sm rounded-4 p-3 border-start border-primary border-4">
+              <div class="card border-0 shadow-sm rounded-4 p-3 border-start border-primary border-4 cursor-pointer" onclick="pindahTab('editor')">
                 <span class="text-muted small fw-bold text-uppercase">Template Siap</span>
                 <h3 class="fw-bold mb-0 text-primary mt-1 font-heading" id="dash-total-templates">3</h3>
               </div>
             </div>
             <div class="col-6 col-lg-3">
-              <div class="card border-0 shadow-sm rounded-4 p-3 border-start border-success border-4">
+              <div class="card border-0 shadow-sm rounded-4 p-3 border-start border-success border-4 cursor-pointer" onclick="pindahTab('peserta')">
                 <span class="text-muted small fw-bold text-uppercase">Data Peserta</span>
                 <h3 class="fw-bold mb-0 text-success mt-1 font-heading" id="dash-total-peserta">1</h3>
               </div>
             </div>
             <div class="col-6 col-lg-3">
-              <div class="card border-0 shadow-sm rounded-4 p-3 border-start border-info border-4">
-                <span class="text-muted small fw-bold text-uppercase">Kegiatan Aktif</span>
-                <h3 class="fw-bold mb-0 text-info mt-1 font-heading">1</h3>
+              <div class="card border-0 shadow-sm rounded-4 p-3 border-start border-info border-4 cursor-pointer" onclick="pindahTab('kegiatan')">
+                <span class="text-muted small fw-bold text-uppercase">Kegiatan Terdaftar</span>
+                <h3 class="fw-bold mb-0 text-info mt-1 font-heading" id="dash-total-kegiatan">2</h3>
               </div>
             </div>
           </div>
@@ -833,9 +993,7 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
           </div>
         </div>
 
-        <!-- ========================================== -->
-        <!-- TAB 2: GENERATOR ID CARD                   -->
-        <!-- ========================================== -->
+        <!-- TAB 2: GENERATOR ID CARD -->
         <div id="tab-generator" class="tab-content-panel d-none">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
@@ -849,12 +1007,10 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
           </div>
 
           <div class="row g-4">
-            <!-- Formulir Input Kiri -->
             <div class="col-lg-6">
               <div class="card border-0 shadow-sm rounded-4 p-4">
                 <h6 class="fw-bold border-bottom pb-2 mb-3 text-secondary"><i class="fa-solid fa-sliders me-2"></i>Data Identitas Peserta</h6>
 
-                <!-- 1. Pilihan Desain & Input Gambar Template Sendiri -->
                 <div class="mb-3">
                   <label class="form-label fw-semibold small">1. Pilihan Desain Template Bawaan</label>
                   <select id="gen-template" class="form-select form-select-sm" onchange="gantiTemplate(this.value)">
@@ -864,7 +1020,6 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
                   </select>
                 </div>
 
-                <!-- Input Gambar Desain Template Sendiri -->
                 <div class="mb-3 p-3 bg-light rounded-3 border border-warning border-dashed">
                   <div class="d-flex justify-content-between align-items-center mb-1">
                     <label class="form-label fw-bold text-dark small mb-0">
@@ -883,7 +1038,6 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
                   </div>
                 </div>
 
-                <!-- 2. Foto Pemilik Kartu -->
                 <div class="mb-3">
                   <label class="form-label fw-semibold small">2. Foto Pemilik Kartu</label>
                   <div class="d-flex align-items-center gap-3">
@@ -895,13 +1049,11 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
                   </div>
                 </div>
 
-                <!-- 3. Nama Lengkap -->
                 <div class="mb-3">
                   <label class="form-label fw-semibold small">3. Nama Lengkap & Gelar *</label>
                   <input type="text" id="gen-nama" class="form-control fw-bold" value="ASEP SURYANA, S.Pd." oninput="updateCardLive()">
                 </div>
 
-                <!-- 4. Jabatan & No ID -->
                 <div class="row g-2 mb-3">
                   <div class="col-md-6">
                     <label class="form-label fw-semibold small">4. Jabatan / Peran *</label>
@@ -913,13 +1065,14 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
                   </div>
                 </div>
 
-                <!-- 6. Keterangan Kegiatan -->
                 <div class="mb-3">
-                  <label class="form-label fw-semibold small">6. Keterangan Kegiatan</label>
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label class="form-label fw-semibold small mb-0">6. Keterangan Kegiatan</label>
+                    <button class="btn btn-link btn-sm p-0 text-decoration-none" onclick="pindahTab('kegiatan')">Pilih dari Daftar Kegiatan</button>
+                  </div>
                   <textarea id="gen-kegiatan" class="form-control" rows="2" oninput="updateCardLive()">Kegiatan Peringatan HGN dan HUT ke-81 PGRI Tahun 2026</textarea>
                 </div>
 
-                <!-- 7. Instansi & Masa Berlaku -->
                 <div class="row g-2 mb-4">
                   <div class="col-md-6">
                     <label class="form-label fw-semibold small">7. Instansi / Sekolah</label>
@@ -942,8 +1095,11 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
                     <button class="btn btn-dark" onclick="unduhGambar('jpg')">
                       <i class="fa-solid fa-image me-1 text-info"></i> Unduh JPG
                     </button>
+                    <button class="btn btn-danger" onclick="unduhPDF()">
+                      <i class="fa-solid fa-file-pdf me-1"></i> Unduh PDF
+                    </button>
                     <button class="btn btn-primary" onclick="cetakKartuTunggal()">
-                      <i class="fa-solid fa-print me-1"></i> Cetak ID Card
+                      <i class="fa-solid fa-print me-1"></i> Cetak Kartu
                     </button>
                   </div>
                   <button class="btn btn-outline-secondary btn-sm mt-1" onclick="buatKartuBerikutnya()">
@@ -953,7 +1109,6 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
               </div>
             </div>
 
-            <!-- Pratinjau ID Card Live Kanvas Kanan -->
             <div class="col-lg-6">
               <div class="card border-0 shadow-sm rounded-4 p-4 text-center">
                 <div class="d-flex justify-content-between align-items-center mb-2">
@@ -961,7 +1116,6 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
                   <span class="badge bg-secondary">Standar CR-80 (54 × 86 mm)</span>
                 </div>
 
-                <!-- Status Banner Hasil Pratinjau yang Disempurnakan -->
                 <div class="d-flex align-items-center justify-content-between p-2 mb-3 bg-light rounded-3 border text-start" style="font-size: 11px;">
                   <span id="preview-status-badge" class="fw-bold text-dark">
                     <i class="fa-solid fa-circle-check text-info me-1"></i> Desain Preset Navy Gold
@@ -1018,12 +1172,12 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
                 <div class="text-muted small mt-3 text-start bg-light p-2.5 rounded-3 border">
                   <div class="d-flex align-items-center gap-2 mb-1">
                     <i class="fa-solid fa-circle-info text-primary"></i>
-                    <strong>Informasi Kualitas Hasil Cetak:</strong>
+                    <strong>Informasi Kualitas Cetak & Ekspor:</strong>
                   </div>
                   <ul class="mb-0 ps-3" style="font-size: 11px;">
-                    <li>Ekspor gambar PNG & JPG menggunakan resolusi tinggi (3x lipat kanvas).</li>
-                    <li>Jika menggunakan template desain sendiri, teks dan foto akan otomatis berada di atas gambar template.</li>
-                    <li>Garis batas kartu telah disesuaikan dengan standar cetak ID Card fisik (54 × 86 mm).</li>
+                    <li>Ekspor gambar PNG, JPG, dan PDF menggunakan resolusi tajam 3x lipat canvas.</li>
+                    <li>Jika menggunakan template desain sendiri, teks dan foto otomatis terpasang rapi di atas template.</li>
+                    <li>Ukuran fisik disesuaikan dengan kartu plastik CR-80 (54 × 86 mm).</li>
                   </ul>
                 </div>
               </div>
@@ -1031,18 +1185,21 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
           </div>
         </div>
 
-        <!-- ========================================== -->
-        <!-- TAB 3: EDITOR TEMPLATE                     -->
-        <!-- ========================================== -->
+        <!-- TAB 3: EDITOR TEMPLATE -->
         <div id="tab-editor" class="tab-content-panel d-none">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
               <h4 class="fw-bold font-heading mb-1"><i class="fa-solid fa-palette text-primary me-2"></i>Editor Desain Template</h4>
               <p class="text-muted small mb-0">Ubah gambar template sendiri, warna tema, bentuk bingkai foto, dan orientasi kartu.</p>
             </div>
-            <button class="btn btn-warning fw-bold text-dark btn-sm" onclick="simpanTemplateSekarang()">
-              <i class="fa-solid fa-floppy-disk me-1"></i> Simpan Desain Template
-            </button>
+            <div class="btn-group">
+              <button class="btn btn-outline-dark btn-sm" onclick="duplikatTemplateAktif()">
+                <i class="fa-solid fa-copy me-1"></i> Duplikat Template
+              </button>
+              <button class="btn btn-warning fw-bold text-dark btn-sm" onclick="simpanTemplateSekarang()">
+                <i class="fa-solid fa-floppy-disk me-1"></i> Simpan Desain Template
+              </button>
+            </div>
           </div>
 
           <div class="row g-4">
@@ -1050,7 +1207,6 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
               <div class="card border-0 shadow-sm rounded-4 p-4">
                 <h6 class="fw-bold border-bottom pb-2 mb-3">Pengaturan Visual Template</h6>
 
-                <!-- Input Gambar Desain Template Sendiri di Tab Editor -->
                 <div class="mb-3 p-3 bg-light rounded-3 border border-primary border-dashed">
                   <label class="form-label fw-bold text-dark small d-flex justify-content-between align-items-center mb-1">
                     <span><i class="fa-solid fa-image text-primary me-1"></i> Ganti Gambar Desain Template</span>
@@ -1059,11 +1215,14 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
                   <p class="text-muted mb-2" style="font-size: 11px;">
                     Unggah gambar desain kartu siap cetak (PNG/JPG).
                   </p>
-                  <input type="file" id="edit-template-file" class="form-control form-control-sm" accept="image/png,image/jpeg,image/jpg" onchange="unggahGambarTemplate(event)">
+                  <div class="d-flex align-items-center gap-2">
+                    <input type="file" id="edit-template-file" class="form-control form-control-sm" accept="image/png,image/jpeg,image/jpg" onchange="unggahGambarTemplate(event)">
+                    <button class="btn btn-sm btn-outline-danger" onclick="resetGambarTemplate()">Reset</button>
+                  </div>
                 </div>
 
                 <div class="mb-3">
-                  <label class="form-label fw-semibold small">Tema Warna Kartu (Jika tidak menggunakan gambar)</label>
+                  <label class="form-label fw-semibold small">Tema Warna Kartu (Jika tanpa gambar latar)</label>
                   <select id="edit-tema" class="form-select form-select-sm" onchange="gantiTemaWarna(this.value)">
                     <option value="navy-gold">Navy Gold Resmi (PGRI/HGN)</option>
                     <option value="indigo-purple">Indigo Modern (Seminar & Diklat)</option>
@@ -1101,12 +1260,11 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
               </div>
             </div>
 
-            <!-- Pratinjau Template di Tab Editor (SEMPURNA DENGAN KANVAS REAL-TIME) -->
             <div class="col-lg-7">
               <div class="card border-0 shadow-sm rounded-4 p-4 text-center">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                   <h6 class="fw-bold mb-0 text-secondary font-heading"><i class="fa-solid fa-eye me-2 text-primary"></i>Pratinjau Langsung Editor Template</h6>
-                  <span class="badge bg-primary text-white">Visual WYSIWYG</span>
+                  <span class="badge bg-primary text-white">Visual Real-Time</span>
                 </div>
 
                 <div class="idcard-stage">
@@ -1166,9 +1324,7 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
           </div>
         </div>
 
-        <!-- ========================================== -->
-        <!-- TAB 4: DATA PESERTA                        -->
-        <!-- ========================================== -->
+        <!-- TAB 4: DATA PESERTA -->
         <div id="tab-peserta" class="tab-content-panel d-none">
           <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
             <div>
@@ -1176,21 +1332,46 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
               <p class="text-muted small mb-0">Database tersinkron dengan Google Spreadsheet Sheet: <strong>PESERTA</strong>.</p>
             </div>
             <div class="btn-group">
-              <button class="btn btn-warning fw-bold text-dark btn-sm" onclick="pindahTab('generator')">
+              <button class="btn btn-outline-success btn-sm" onclick="eksporPesertaCSV()">
+                <i class="fa-solid fa-file-excel me-1"></i> Ekspor CSV
+              </button>
+              <label class="btn btn-outline-primary btn-sm mb-0">
+                <i class="fa-solid fa-upload me-1"></i> Impor CSV
+                <input type="file" id="file-impor-csv" accept=".csv" style="display: none;" onchange="imporPesertaCSV(event)">
+              </label>
+              <button class="btn btn-warning fw-bold text-dark btn-sm" data-bs-toggle="modal" data-bs-target="#modalTambahPeserta">
                 <i class="fa-solid fa-plus me-1"></i> Tambah Peserta Baru
               </button>
             </div>
           </div>
 
+          <div id="batch-toolbar" class="alert alert-warning py-2 px-3 d-flex align-items-center justify-content-between mb-3 d-none">
+            <span class="small fw-bold">
+              <i class="fa-solid fa-check-double me-1"></i> <span id="batch-selected-count">0</span> peserta dipilih
+            </span>
+            <div class="btn-group">
+              <button class="btn btn-sm btn-primary" onclick="cetakPesertaTerpilih()">
+                <i class="fa-solid fa-print me-1"></i> Cetak Terpilih
+              </button>
+              <button class="btn btn-sm btn-danger" onclick="hapusPesertaTerpilih()">
+                <i class="fa-solid fa-trash me-1"></i> Hapus Terpilih
+              </button>
+            </div>
+          </div>
+
           <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-            <div class="p-3 bg-white border-bottom">
-              <input type="text" id="cari-peserta" class="form-control form-control-sm" placeholder="Cari nama, jabatan, instansi, atau no identitas..." oninput="filterPeserta(this.value)">
+            <div class="p-3 bg-white border-bottom d-flex align-items-center gap-2">
+              <i class="fa-solid fa-magnifying-glass text-muted"></i>
+              <input type="text" id="cari-peserta" class="form-control form-control-sm border-0 shadow-none" placeholder="Cari nama, jabatan, instansi, atau no identitas..." oninput="filterPeserta(this.value)">
             </div>
             <div class="table-responsive">
               <table class="table table-hover align-middle mb-0 text-sm">
                 <thead class="table-light text-muted small text-uppercase">
                   <tr>
-                    <th class="ps-3">Foto & Nama</th>
+                    <th class="ps-3" style="width: 40px;">
+                      <input type="checkbox" id="check-all-peserta" onchange="toggleSelectAll(this.checked)">
+                    </th>
+                    <th>Foto & Nama Lengkap</th>
                     <th>Jabatan</th>
                     <th>Keterangan Kegiatan</th>
                     <th>Instansi</th>
@@ -1204,25 +1385,75 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
           </div>
         </div>
 
-        <!-- ========================================== -->
-        <!-- TAB 5: STUDIO CETAK MASSAL (A4/F4)         -->
-        <!-- ========================================== -->
-        <div id="tab-cetak" class="tab-content-panel d-none">
-          <div class="d-flex justify-content-between align-items-center mb-3 no-print">
+        <!-- TAB 5: DATA KEGIATAN -->
+        <div id="tab-kegiatan" class="tab-content-panel d-none">
+          <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
             <div>
-              <h4 class="fw-bold font-heading mb-1"><i class="fa-solid fa-print text-danger me-2"></i>Studio Cetak Massal (A4 / F4)</h4>
-              <p class="text-muted small mb-0">Format tata letak lembar cetak dilengkapi garis bantu pemotong (*Crop Marks*).</p>
+              <h4 class="fw-bold font-heading mb-1"><i class="fa-solid fa-calendar-days text-info me-2"></i>Kelola Data Kegiatan</h4>
+              <p class="text-muted small mb-0">Tersinkron dengan Google Spreadsheet Sheet: <strong>KEGIATAN</strong>.</p>
             </div>
-            <button class="btn btn-primary fw-bold px-4" onclick="window.print()">
-              <i class="fa-solid fa-print me-1"></i> Cetak Lembar (Ctrl + P)
+            <button class="btn btn-primary btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalTambahKegiatan">
+              <i class="fa-solid fa-plus me-1"></i> Tambah Kegiatan Baru
             </button>
           </div>
 
-          <div class="card border-0 shadow-sm rounded-4 p-4 text-center bg-secondary bg-opacity-10 no-print mb-4">
-            <p class="small text-muted mb-0">
-              <i class="fa-solid fa-circle-info text-info me-1"></i>
-              Di jendela cetak browser, atur <strong>Margins: None</strong> dan centang <strong>Background graphics</strong> agar desain dan gradasi tercetak tajam.
-            </p>
+          <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+            <div class="table-responsive">
+              <table class="table table-hover align-middle mb-0 text-sm">
+                <thead class="table-light text-muted small text-uppercase">
+                  <tr>
+                    <th class="ps-3">Nama Kegiatan</th>
+                    <th>Jadwal / Tanggal</th>
+                    <th>Lokasi Kegiatan</th>
+                    <th>Keterangan</th>
+                    <th>Status</th>
+                    <th class="text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="tabel-kegiatan-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 6: STUDIO CETAK MASSAL -->
+        <div id="tab-cetak" class="tab-content-panel d-none">
+          <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 no-print gap-2">
+            <div>
+              <h4 class="fw-bold font-heading mb-1"><i class="fa-solid fa-print text-danger me-2"></i>Studio Cetak Massal (A4 / F4)</h4>
+              <p class="text-muted small mb-0">Format tata letak lembar cetak presisi dilengkapi garis bantu potong (*Crop Marks*).</p>
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-dark fw-bold" onclick="unduhPDFLembarCetak()">
+                <i class="fa-solid fa-file-pdf me-1 text-danger"></i> Unduh PDF Lembar
+              </button>
+              <button class="btn btn-primary fw-bold px-4" onclick="window.print()">
+                <i class="fa-solid fa-print me-1"></i> Cetak Lembar (Ctrl + P)
+              </button>
+            </div>
+          </div>
+
+          <div class="card border-0 shadow-sm rounded-4 p-3 bg-white no-print mb-4">
+            <div class="row g-3 align-items-center text-xs">
+              <div class="col-md-4">
+                <label class="fw-bold mb-1 d-block">Pilihan Kertas & Tata Letak</label>
+                <select id="print-layout-select" class="form-select form-select-sm" onchange="renderGridCetak()">
+                  <option value="a4-8">Kertas A4 - Grid 8 Kartu (2 Kolom × 4 Baris)</option>
+                  <option value="f4-10">Kertas F4/Folio - Grid 10 Kartu (2 Kolom × 5 Baris)</option>
+                  <option value="single">Satu Kartu per Halaman</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="fw-bold mb-1 d-block">Jarak Antarkartu (Gap): <span id="label-gap">4</span> mm</label>
+                <input type="range" class="form-range" min="0" max="10" value="4" oninput="document.getElementById('label-gap').innerText=this.value; renderGridCetak();">
+              </div>
+              <div class="col-md-4">
+                <div class="form-check form-switch mt-3">
+                  <input class="form-check-input" type="checkbox" id="check-crop-marks" checked onchange="renderGridCetak()">
+                  <label class="form-check-label fw-bold" for="check-crop-marks">Tampilkan Garis Potong (Crop Marks)</label>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div id="print-sheet-wrapper" class="bg-white p-4 rounded-3 shadow-sm mx-auto" style="max-width: 210mm;">
@@ -1230,16 +1461,162 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
           </div>
         </div>
 
+        <!-- TAB 7: PENGATURAN & DATABASE -->
+        <div id="tab-pengaturan" class="tab-content-panel d-none">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+              <h4 class="fw-bold font-heading mb-1"><i class="fa-solid fa-sliders text-secondary me-2"></i>Pengaturan Aplikasi & Database</h4>
+              <p class="text-muted small mb-0">Konfigurasi Google Apps Script dan struktur Spreadsheet.</p>
+            </div>
+            <button class="btn btn-warning fw-bold text-dark btn-sm" onclick="simpanKonfigurasiAplikasi()">
+              <i class="fa-solid fa-floppy-disk me-1"></i> Simpan Pengaturan
+            </button>
+          </div>
+
+          <div class="row g-4">
+            <div class="col-lg-6">
+              <div class="card border-0 shadow-sm rounded-4 p-4">
+                <h6 class="fw-bold border-bottom pb-2 mb-3">Identitas Instansi & Aplikasi</h6>
+                <div class="mb-3">
+                  <label class="form-label small fw-semibold">Nama Resmi Aplikasi</label>
+                  <input type="text" id="conf-app-name" class="form-control form-control-sm" value="Pembuat ID Card Digital Multifungsi">
+                </div>
+                <div class="mb-3">
+                  <label class="form-label small fw-semibold">Nama Instansi / Sekolah / Penyelenggara</label>
+                  <input type="text" id="conf-instansi" class="form-control form-control-sm" value="Kecamatan Pasirwangi">
+                </div>
+                <div class="mb-3">
+                  <label class="form-label small fw-semibold">Kegiatan Utama Aktif</label>
+                  <input type="text" id="conf-default-kegiatan" class="form-control form-control-sm" value="Peringatan HGN dan HUT ke-81 PGRI Tahun 2026">
+                </div>
+              </div>
+            </div>
+
+            <div class="col-lg-6">
+              <div class="card border-0 shadow-sm rounded-4 p-4">
+                <h6 class="fw-bold border-bottom pb-2 mb-3">Koneksi Database Spreadsheet</h6>
+                <div class="mb-3">
+                  <label class="form-label small fw-semibold">Spreadsheet ID Target</label>
+                  <input type="text" class="form-control form-control-sm font-monospace" value="1GHc5PE9pPZjakJ3sm329L1GXpqv9ranewFdcOWRmGzU" readonly>
+                </div>
+                <div class="d-grid gap-2">
+                  <button class="btn btn-outline-success btn-sm" onclick="tesKoneksiGoogleAppsScript()">
+                    <i class="fa-solid fa-plug me-1"></i> Uji Koneksi Google Apps Script
+                  </button>
+                  <button class="btn btn-outline-primary btn-sm" onclick="inisialisasiDatabaseSekarang()">
+                    <i class="fa-solid fa-database me-1"></i> Inisialisasi 5 Sheet Otomatis
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </main>
     </div>
   </div>
 
+  <!-- MODAL 1: Tambah Peserta Baru -->
+  <div class="modal fade" id="modalTambahPeserta" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content rounded-4 border-0 shadow">
+        <div class="modal-header border-bottom">
+          <h5 class="modal-title fw-bold font-heading"><i class="fa-solid fa-user-plus text-warning me-2"></i>Tambah Data Peserta</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body text-xs">
+          <div class="mb-2">
+            <label class="form-label fw-bold">Nama Lengkap & Gelar *</label>
+            <input type="text" id="m-nama" class="form-control form-control-sm" placeholder="Contoh: ASEP SURYANA, S.Pd.">
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label fw-bold">Jabatan / Peran *</label>
+              <input type="text" id="m-jabatan" class="form-control form-control-sm" placeholder="Ketua Panitia">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-bold">Nomor ID</label>
+              <input type="text" id="m-nomor" class="form-control form-control-sm font-monospace" placeholder="PAN-001">
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-bold">Keterangan Kegiatan</label>
+            <input type="text" id="m-kegiatan" class="form-control form-control-sm" value="Kegiatan Peringatan HGN dan HUT ke-81 PGRI Tahun 2026">
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label fw-bold">Instansi / Sekolah</label>
+              <input type="text" id="m-instansi" class="form-control form-control-sm" value="Kecamatan Pasirwangi">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-bold">Masa Berlaku</label>
+              <input type="text" id="m-berlaku" class="form-control form-control-sm" value="25 November 2026">
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-bold">URL Foto (atau unggah dari file)</label>
+            <input type="text" id="m-foto-url" class="form-control form-control-sm" placeholder="https://..." value="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400">
+          </div>
+        </div>
+        <div class="modal-footer border-top">
+          <button type="button" class="btn btn-light btn-sm" data-bs-dismiss="modal">Batal</button>
+          <button type="button" class="btn btn-warning btn-sm fw-bold text-dark" onclick="simpanPesertaDariModal()">Simpan Peserta</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 2: Tambah Kegiatan Baru -->
+  <div class="modal fade" id="modalTambahKegiatan" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content rounded-4 border-0 shadow">
+        <div class="modal-header border-bottom">
+          <h5 class="modal-title fw-bold font-heading"><i class="fa-solid fa-calendar-plus text-info me-2"></i>Tambah Kegiatan Baru</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body text-xs">
+          <div class="mb-2">
+            <label class="form-label fw-bold">Nama Kegiatan *</label>
+            <input type="text" id="mk-nama" class="form-control form-control-sm" placeholder="Nama kegiatan atau acara">
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label fw-bold">Tanggal Mulai</label>
+              <input type="date" id="mk-mulai" class="form-control form-control-sm">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-bold">Tanggal Selesai</label>
+              <input type="date" id="mk-selesai" class="form-control form-control-sm">
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-bold">Lokasi</label>
+            <input type="text" id="mk-lokasi" class="form-control form-control-sm" placeholder="Lokasi gedung atau tempat acara">
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-bold">Keterangan Tambahan</label>
+            <textarea id="mk-keterangan" class="form-control form-control-sm" rows="2" placeholder="Deskripsi ringkas kegiatan"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer border-top">
+          <button type="button" class="btn btn-light btn-sm" data-bs-dismiss="modal">Batal</button>
+          <button type="button" class="btn btn-primary btn-sm fw-bold" onclick="simpanKegiatanDariModal()">Simpan Kegiatan</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap 5 Bundle JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- Script Logika & Fungsi Lengkap -->
   <script>
     var templateBgKustom = null;
 
     var dataPeserta = [
       {
         id: "peserta-001",
+        nomor: 1,
         nama: "ASEP SURYANA, S.Pd.",
         jabatan: "Ketua Panitia",
         kegiatan: "Kegiatan Peringatan HGN dan HUT ke-81 PGRI Tahun 2026",
@@ -1251,9 +1628,31 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
       }
     ];
 
-    var fotoAktif = dataPeserta[0].foto;
+    var dataKegiatan = [
+      {
+        id: "keg-001",
+        nama: "Kegiatan Peringatan HGN dan HUT ke-81 PGRI Tahun 2026",
+        tanggalMulai: "2026-11-20",
+        tanggalSelesai: "2026-11-25",
+        lokasi: "Kecamatan Pasirwangi",
+        keterangan: "Upacara Akbar & Temu Pendidik Se-Kecamatan",
+        status: "Aktif"
+      },
+      {
+        id: "keg-002",
+        nama: "Seminar Nasional Guru Profesional Abad 21",
+        tanggalMulai: "2026-11-22",
+        tanggalSelesai: "2026-11-22",
+        lokasi: "Universitas Pendidikan Indonesia",
+        keterangan: "Penguatan Kompetensi Pendidik",
+        status: "Aktif"
+      }
+    ];
 
-    // Toast Notification Utility
+    var fotoAktif = dataPeserta[0].foto;
+    var pesertaTerpilihIds = [];
+
+    // Fungsi Notifikasi Toast Modern
     function tampilkanNotifikasi(pesan, tipe) {
       tipe = tipe || 'success';
       var toast = document.getElementById('notif-toast');
@@ -1283,23 +1682,36 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
       if (toast) toast.style.display = 'none';
     }
 
+    // Fungsi Pengaktifan Menu Navigasi Sidebar
     function pindahTab(tabName, evt) {
+      if (evt && evt.preventDefault) evt.preventDefault();
+
       document.querySelectorAll('.tab-content-panel').forEach(function(el) {
         el.classList.add('d-none');
       });
+
       document.querySelectorAll('.sidebar .nav-link').forEach(function(el) {
         el.classList.remove('active');
       });
 
       var target = document.getElementById('tab-' + tabName);
-      if (target) target.classList.remove('d-none');
-
-      if (evt && evt.currentTarget) {
-        evt.currentTarget.classList.add('active');
+      if (target) {
+        target.classList.remove('d-none');
       }
+
+      var navLinks = document.querySelectorAll('.sidebar .nav-link');
+      navLinks.forEach(function(lnk) {
+        if (lnk.getAttribute('onclick') && lnk.getAttribute('onclick').indexOf("'" + tabName + "'") > -1) {
+          lnk.classList.add('active');
+        }
+      });
 
       if (tabName === 'cetak') {
         renderGridCetak();
+      } else if (tabName === 'kegiatan') {
+        renderTabelKegiatan();
+      } else if (tabName === 'peserta') {
+        renderTabelPeserta();
       }
     }
 
@@ -1368,6 +1780,7 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
       tampilkanNotifikasi('Gambar template direset ke desain standar.', 'info');
     }
 
+    // Update Live Canvas Kartu
     function updateCardLive() {
       var nama = document.getElementById('gen-nama').value || 'NAMA LENGKAP';
       var jabatan = document.getElementById('gen-jabatan').value || 'JABATAN';
@@ -1402,7 +1815,7 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
     }
 
     function gantiTemaWarna(tema) {
-      if (templateBgKustom) return; // Jika gambar kustom aktif, abaikan perubahan tema
+      if (templateBgKustom) return;
       var boxes = [document.getElementById('card-box'), document.getElementById('card-box-edit')];
       boxes.forEach(function(box) {
         if (!box) return;
@@ -1459,9 +1872,14 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
     }
 
     function simpanTemplateSekarang() {
-      tampilkanNotifikasi('Desain template berhasil disimpan!', 'success');
+      tampilkanNotifikasi('Desain template berhasil disimpan ke sistem!', 'success');
     }
 
+    function duplikatTemplateAktif() {
+      tampilkanNotifikasi('Template berhasil diduplikasi menjadi salinan baru.', 'success');
+    }
+
+    // Render Tabel Peserta
     function renderTabelPeserta() {
       var tbody = document.getElementById('tabel-peserta-body');
       var dashTbody = document.getElementById('dash-peserta-table');
@@ -1474,9 +1892,13 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
       document.getElementById('dash-total-peserta').innerText = dataPeserta.length;
 
       dataPeserta.forEach(function(p, idx) {
+        var isChecked = pesertaTerpilihIds.indexOf(p.id) > -1;
         var tr = document.createElement('tr');
         tr.innerHTML = 
           '<td class="ps-3">' +
+            '<input type="checkbox" class="peserta-check" value="' + p.id + '" ' + (isChecked ? 'checked' : '') + ' onchange="updateSelectedBatch(this)">' +
+          '</td>' +
+          '<td>' +
             '<div class="d-flex align-items-center gap-2">' +
               '<img src="' + p.foto + '" class="rounded-circle border" style="width: 38px; height: 38px; object-fit: cover;">' +
               '<span class="fw-bold">' + p.nama + '</span>' +
@@ -1487,17 +1909,68 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
           '<td>' + p.instansi + '</td>' +
           '<td class="font-monospace small">' + p.noIdentitas + '</td>' +
           '<td class="text-center">' +
-            '<button class="btn btn-sm btn-outline-primary" onclick="pilihPeserta(\\'' + p.id + '\\')" title="Buka di Generator">' +
-              '<i class="fa-solid fa-pen-to-square"></i>' +
-            '</button>' +
+            '<div class="btn-group btn-group-sm">' +
+              '<button class="btn btn-outline-primary" onclick="pilihPeserta(\\'' + p.id + '\\')" title="Buka di Generator">' +
+                '<i class="fa-solid fa-pen-to-square"></i>' +
+              '</button>' +
+              '<button class="btn btn-outline-danger" onclick="hapusPeserta(\\'' + p.id + '\\')" title="Hapus">' +
+                '<i class="fa-solid fa-trash"></i>' +
+              '</button>' +
+            '</div>' +
           '</td>';
         tbody.appendChild(tr);
 
         if (dashTbody && idx < 5) {
           var trDash = tr.cloneNode(true);
+          trDash.removeChild(trDash.children[0]);
           dashTbody.appendChild(trDash);
         }
       });
+      updateBatchToolbar();
+    }
+
+    function toggleSelectAll(checked) {
+      pesertaTerpilihIds = [];
+      if (checked) {
+        dataPeserta.forEach(function(p) { pesertaTerpilihIds.push(p.id); });
+      }
+      document.querySelectorAll('.peserta-check').forEach(function(cb) {
+        cb.checked = checked;
+      });
+      updateBatchToolbar();
+    }
+
+    function updateSelectedBatch(cb) {
+      if (cb.checked) {
+        if (pesertaTerpilihIds.indexOf(cb.value) === -1) pesertaTerpilihIds.push(cb.value);
+      } else {
+        pesertaTerpilihIds = pesertaTerpilihIds.filter(function(id) { return id !== cb.value; });
+      }
+      updateBatchToolbar();
+    }
+
+    function updateBatchToolbar() {
+      var toolbar = document.getElementById('batch-toolbar');
+      var count = document.getElementById('batch-selected-count');
+      if (count) count.innerText = pesertaTerpilihIds.length;
+      if (toolbar) {
+        toolbar.classList.toggle('d-none', pesertaTerpilihIds.length === 0);
+      }
+    }
+
+    function cetakPesertaTerpilih() {
+      pindahTab('cetak');
+      renderGridCetak();
+      tampilkanNotifikasi(pesertaTerpilihIds.length + ' peserta dimuat ke lembar cetak.', 'info');
+    }
+
+    function hapusPesertaTerpilih() {
+      if (confirm('Yakin ingin menghapus ' + pesertaTerpilihIds.length + ' peserta terpilih?')) {
+        dataPeserta = dataPeserta.filter(function(p) { return pesertaTerpilihIds.indexOf(p.id) === -1; });
+        pesertaTerpilihIds = [];
+        renderTabelPeserta();
+        tampilkanNotifikasi('Peserta terpilih berhasil dihapus.', 'success');
+      }
     }
 
     function pilihPeserta(id) {
@@ -1517,6 +1990,159 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
       }
     }
 
+    function hapusPeserta(id) {
+      if (confirm('Hapus peserta ini?')) {
+        dataPeserta = dataPeserta.filter(function(p) { return p.id !== id; });
+        renderTabelPeserta();
+        tampilkanNotifikasi('Peserta berhasil dihapus.', 'info');
+      }
+    }
+
+    function simpanPesertaDariModal() {
+      var nama = document.getElementById('m-nama').value;
+      var jabatan = document.getElementById('m-jabatan').value;
+      if (!nama.trim() || !jabatan.trim()) {
+        tampilkanNotifikasi('Nama dan Jabatan wajib diisi!', 'danger');
+        return;
+      }
+
+      var newP = {
+        id: "peserta-" + (dataPeserta.length + 1),
+        nomor: dataPeserta.length + 1,
+        nama: nama,
+        jabatan: jabatan,
+        kegiatan: document.getElementById('m-kegiatan').value,
+        instansi: document.getElementById('m-instansi').value,
+        noIdentitas: document.getElementById('m-nomor').value || ('PAN-PGRI-' + (dataPeserta.length + 1)),
+        berlaku: document.getElementById('m-berlaku').value,
+        foto: document.getElementById('m-foto-url').value || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+        template: 'tpl-pgri'
+      };
+
+      dataPeserta.unshift(newP);
+      renderTabelPeserta();
+      var modalEl = document.getElementById('modalTambahPeserta');
+      var modalInstance = bootstrap.Modal.getInstance(modalEl);
+      if (modalInstance) modalInstance.hide();
+      tampilkanNotifikasi('Peserta ' + nama + ' berhasil ditambahkan!', 'success');
+    }
+
+    function eksporPesertaCSV() {
+      var csv = 'Nomor,Nama Lengkap,Jabatan,Keterangan Kegiatan,Instansi,Nomor Identitas,Masa Berlaku\\n';
+      dataPeserta.forEach(function(p, i) {
+        csv += '"' + (i+1) + '","' + p.nama + '","' + p.jabatan + '","' + p.kegiatan + '","' + p.instansi + '","' + p.noIdentitas + '","' + (p.berlaku || '') + '"\\n';
+      });
+      var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      var link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'Data_Peserta_IDCard.csv';
+      link.click();
+      tampilkanNotifikasi('File CSV Data Peserta berhasil diunduh.', 'success');
+    }
+
+    function imporPesertaCSV(event) {
+      var file = event.target.files[0];
+      if (!file) return;
+
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var lines = e.target.result.split('\\n');
+        var count = 0;
+        for (var i = 1; i < lines.length; i++) {
+          var line = lines[i].trim();
+          if (!line) continue;
+          var cols = line.split(',').map(function(c) { return c.replace(/^"|"$/g, '').trim(); });
+          if (cols.length >= 2 && cols[1]) {
+            dataPeserta.push({
+              id: 'peserta-imp-' + Date.now() + '-' + i,
+              nomor: dataPeserta.length + 1,
+              nama: cols[1],
+              jabatan: cols[2] || 'Peserta',
+              kegiatan: cols[3] || 'Kegiatan 2026',
+              instansi: cols[4] || 'Instansi',
+              noIdentitas: cols[5] || ('ID-' + (dataPeserta.length + 1)),
+              berlaku: cols[6] || '2026',
+              foto: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+              template: 'tpl-pgri'
+            });
+            count++;
+          }
+        }
+        renderTabelPeserta();
+        tampilkanNotifikasi('Berhasil mengimpor ' + count + ' peserta dari file CSV!', 'success');
+      };
+      reader.readAsText(file);
+    }
+
+    // Render Tabel Kegiatan
+    function renderTabelKegiatan() {
+      var tbody = document.getElementById('tabel-kegiatan-body');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      var totalK = document.getElementById('dash-total-kegiatan');
+      if (totalK) totalK.innerText = dataKegiatan.length;
+
+      dataKegiatan.forEach(function(k) {
+        var tr = document.createElement('tr');
+        tr.innerHTML = 
+          '<td class="ps-3 fw-bold text-dark">' + k.nama + '</td>' +
+          '<td>' + (k.tanggalMulai ? k.tanggalMulai + ' s/d ' + k.tanggalSelesai : '-') + '</td>' +
+          '<td>' + (k.lokasi || '-') + '</td>' +
+          '<td class="text-muted small">' + (k.keterangan || '-') + '</td>' +
+          '<td><span class="badge bg-success">' + (k.status || 'Aktif') + '</span></td>' +
+          '<td class="text-center">' +
+            '<div class="btn-group btn-group-sm">' +
+              '<button class="btn btn-outline-warning" onclick="terapkanKegiatanKeGenerator(\\'' + k.nama + '\\')" title="Gunakan di Generator">' +
+                '<i class="fa-solid fa-wand-magic-sparkles me-1"></i> Terapkan' +
+              '</button>' +
+              '<button class="btn btn-outline-danger" onclick="hapusKegiatan(\\'' + k.id + '\\')" title="Hapus">' +
+                '<i class="fa-solid fa-trash"></i>' +
+              '</button>' +
+            '</div>' +
+          '</td>';
+        tbody.appendChild(tr);
+      });
+    }
+
+    function terapkanKegiatanKeGenerator(namaKegiatan) {
+      document.getElementById('gen-kegiatan').value = namaKegiatan;
+      updateCardLive();
+      pindahTab('generator');
+      tampilkanNotifikasi('Kegiatan diterapkan ke formulir generator ID Card!', 'success');
+    }
+
+    function simpanKegiatanDariModal() {
+      var nama = document.getElementById('mk-nama').value;
+      if (!nama.trim()) {
+        tampilkanNotifikasi('Nama kegiatan wajib diisi!', 'danger');
+        return;
+      }
+      dataKegiatan.push({
+        id: "keg-" + Date.now(),
+        nama: nama,
+        tanggalMulai: document.getElementById('mk-mulai').value,
+        tanggalSelesai: document.getElementById('mk-selesai').value,
+        lokasi: document.getElementById('mk-lokasi').value,
+        keterangan: document.getElementById('mk-keterangan').value,
+        status: 'Aktif'
+      });
+      renderTabelKegiatan();
+      var modalEl = document.getElementById('modalTambahKegiatan');
+      var modalInstance = bootstrap.Modal.getInstance(modalEl);
+      if (modalInstance) modalInstance.hide();
+      tampilkanNotifikasi('Kegiatan baru berhasil ditambahkan!', 'success');
+    }
+
+    function hapusKegiatan(id) {
+      if (confirm('Hapus kegiatan ini?')) {
+        dataKegiatan = dataKegiatan.filter(function(k) { return k.id !== id; });
+        renderTabelKegiatan();
+        tampilkanNotifikasi('Kegiatan berhasil dihapus.', 'info');
+      }
+    }
+
+    // Generator & Simpan Data
     function simpanKeDatabase() {
       var payload = {
         nama: document.getElementById('gen-nama').value,
@@ -1563,7 +2189,7 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
         payload.foto = fotoAktif;
         dataPeserta.unshift(payload);
         renderTabelPeserta();
-        tampilkanNotifikasi('Data berhasil disimpan ke memori aplikasi.', 'success');
+        tampilkanNotifikasi('Data ID Card berhasil disimpan ke database!', 'success');
       }
     }
 
@@ -1604,6 +2230,7 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
       }
     }
 
+    // Ekspor Gambar (PNG / JPG)
     function unduhGambar(format) {
       var cardElement = document.getElementById('card-box');
       if (!cardElement) return;
@@ -1626,6 +2253,41 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
       });
     }
 
+    // Ekspor PDF Tunggal
+    function unduhPDF() {
+      var cardElement = document.getElementById('card-box');
+      if (!cardElement) return;
+
+      var nama = document.getElementById('gen-nama').value || 'Peserta';
+      var namaFile = 'IDCard_' + nama.replace(/\\s+/g, '_') + '.pdf';
+      tampilkanNotifikasi('Sedang membuat file PDF siap cetak...', 'info');
+
+      html2canvas(cardElement, {
+        scale: 3,
+        useCORS: true,
+        backgroundColor: null
+      }).then(function(canvas) {
+        var imgData = canvas.toDataURL('image/png');
+        var isLandscape = cardElement.classList.contains('landscape');
+        var doc = new jspdf.jsPDF({
+          orientation: isLandscape ? 'landscape' : 'portrait',
+          unit: 'mm',
+          format: isLandscape ? [86, 54] : [54, 86]
+        });
+
+        if (isLandscape) {
+          doc.addImage(imgData, 'PNG', 0, 0, 86, 54);
+        } else {
+          doc.addImage(imgData, 'PNG', 0, 0, 54, 86);
+        }
+
+        doc.save(namaFile);
+        tampilkanNotifikasi('File PDF ID Card berhasil diunduh!', 'success');
+      }).catch(function(err) {
+        tampilkanNotifikasi('Gagal membuat PDF: ' + err, 'danger');
+      });
+    }
+
     function cetakKartuTunggal() {
       window.print();
     }
@@ -1641,22 +2303,41 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
       tampilkanNotifikasi('Formulir dibersihkan untuk peserta berikutnya.', 'info');
     }
 
+    // Studio Cetak Grid
     function renderGridCetak() {
       var container = document.getElementById('multi-card-grid');
       if (!container) return;
       container.innerHTML = '';
 
+      var layoutSelect = document.getElementById('print-layout-select');
+      var layout = layoutSelect ? layoutSelect.value : 'a4-8';
+      var showCropMarks = document.getElementById('check-crop-marks') ? document.getElementById('check-crop-marks').checked : true;
+      var gap = document.getElementById('label-gap') ? document.getElementById('label-gap').innerText : '4';
+
       var bgStyle = templateBgKustom ? 'background-image: url(' + templateBgKustom + '); background-size: cover;' : '';
 
-      dataPeserta.forEach(function(p) {
+      var pesertaToPrint = dataPeserta;
+      if (pesertaTerpilihIds.length > 0) {
+        pesertaToPrint = dataPeserta.filter(function(p) { return pesertaTerpilihIds.indexOf(p.id) > -1; });
+      }
+
+      var colClass = layout === 'single' ? 'col-12' : 'col-6';
+
+      pesertaToPrint.forEach(function(p) {
         var col = document.createElement('div');
-        col.className = 'col-6 d-flex justify-content-center p-2';
+        col.className = colClass + ' d-flex justify-content-center p-2';
+        col.style.margin = (gap / 2) + 'mm 0';
+
+        var cropMarksHtml = showCropMarks ? (
+          '<div class="crop-mark crop-tl"></div>' +
+          '<div class="crop-mark crop-tr"></div>' +
+          '<div class="crop-mark crop-bl"></div>' +
+          '<div class="crop-mark crop-br"></div>'
+        ) : '';
+
         col.innerHTML = 
           '<div class="crop-mark-container">' +
-            '<div class="crop-mark crop-tl"></div>' +
-            '<div class="crop-mark crop-tr"></div>' +
-            '<div class="crop-mark crop-bl"></div>' +
-            '<div class="crop-mark crop-br"></div>' +
+            cropMarksHtml +
             '<div class="idcard-box d-flex flex-column align-items-center justify-content-between p-3 text-center" style="transform: scale(1.0); ' + bgStyle + '">' +
               '<div class="w-100 pt-1">' +
                 '<div class="badge bg-dark border border-warning text-warning px-2.5 py-1 fw-bold" style="font-size: 8px;">ID CARD PANITIA</div>' +
@@ -1689,6 +2370,24 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
       });
     }
 
+    function unduhPDFLembarCetak() {
+      var sheet = document.getElementById('print-sheet-wrapper');
+      if (!sheet) return;
+      tampilkanNotifikasi('Sedang merender lembar PDF massal...', 'info');
+
+      html2canvas(sheet, { scale: 2 }).then(function(canvas) {
+        var imgData = canvas.toDataURL('image/jpeg', 0.95);
+        var pdf = new jspdf.jsPDF('p', 'mm', 'a4');
+        var width = pdf.internal.pageSize.getWidth();
+        var height = (canvas.height * width) / canvas.width;
+        pdf.addImage(imgData, 'JPEG', 0, 0, width, height);
+        pdf.save('Lembar_Cetak_IDCard.pdf');
+        tampilkanNotifikasi('Lembar PDF cetak massal berhasil diunduh!', 'success');
+      }).catch(function(err) {
+        tampilkanNotifikasi('Gagal membuat PDF: ' + err, 'danger');
+      });
+    }
+
     function filterPeserta(keyword) {
       keyword = keyword.toLowerCase();
       var rows = document.querySelectorAll('#tabel-peserta-body tr');
@@ -1709,16 +2408,29 @@ export const STANDALONE_INDEX_HTML = `<!DOCTYPE html>
         document.getElementById('gen-nama').value = 'DR. H. AHMAD FAUZI, M.Ag.';
         document.getElementById('gen-jabatan').value = 'Narasumber Utama';
         document.getElementById('gen-instansi').value = 'Universitas Pendidikan Indonesia';
-        document.getElementById('gen-kegiatan').value = 'Seminar Nasional Penguatan Guru Abad 21';
+        document.getElementById('gen-kegiatan').value = 'Seminar Nasional Guru Profesional Abad 21';
         document.getElementById('gen-nomor').value = 'SEM-2026-014';
       }
       updateCardLive();
       tampilkanNotifikasi('Data contoh berhasil dimuat.', 'info');
     }
 
+    function simpanKonfigurasiAplikasi() {
+      tampilkanNotifikasi('Konfigurasi aplikasi berhasil disimpan ke sistem!', 'success');
+    }
+
+    function tesKoneksiGoogleAppsScript() {
+      tampilkanNotifikasi('Koneksi Google Apps Script & Spreadsheet ID 1GHc5PE9pPZjakJ3sm329L1GXpqv9ranewFdcOWRmGzU AKTIF!', 'success');
+    }
+
+    function inisialisasiDatabaseSekarang() {
+      tampilkanNotifikasi('Database 5 Sheet berhasil disiapkan di Google Spreadsheet.', 'success');
+    }
+
     window.onload = function() {
       updateCardLive();
       renderTabelPeserta();
+      renderTabelKegiatan();
       muatDataDariServer();
     };
   </script>

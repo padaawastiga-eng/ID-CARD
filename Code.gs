@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * APLIKASI PEMBUAT ID CARD DIGITAL MULTIFUNGSI (VERSI TERBARU 2.2.0)
+ * APLIKASI PEMBUAT ID CARD DIGITAL MULTIFUNGSI (VERSI TERBARU 2.3.0)
  * Backend: Google Apps Script (Code.gs)
  * Database: Google Spreadsheet (ID: 1GHc5PE9pPZjakJ3sm329L1GXpqv9ranewFdcOWRmGzU)
  * Storage Foto & Desain Template: Google Drive
@@ -9,11 +9,11 @@
 
 // KONFIGURASI UTAMA
 var CONFIG = {
-  SPREADSHEET_ID: "1GHc5PE9pPZjakJ3sm329L1GXpqv9ranewFdcOWRmGzU", // Google Spreadsheet ID
-  DRIVE_FOLDER_ID: "", // Opsional: ID Folder Google Drive (kosongkan jika otomatis membuat folder baru)
+  SPREADSHEET_ID: "1GHc5PE9pPZjakJ3sm329L1GXpqv9ranewFdcOWRmGzU",
+  DRIVE_FOLDER_ID: "", // ID Folder Google Drive (kosongkan jika otomatis membuat folder baru)
   FOLDER_NAME: "ID_CARD_DIGITAL_STORAGE", // Nama folder di Google Drive
   APP_NAME: "Pembuat ID Card Digital Multifungsi",
-  VERSI: "2.2.0"
+  VERSI: "2.3.0"
 };
 
 /**
@@ -67,6 +67,12 @@ function doPost(e) {
       case "saveKegiatan":
         result = simpanDataKegiatan(data.payload);
         break;
+      case "deleteKegiatan":
+        result = hapusDataKegiatan(data.id);
+        break;
+      case "savePengaturan":
+        result = simpanPengaturan(data.payload);
+        break;
       case "uploadFotoDrive":
         result = simpanFotoKeDrive(data.base64, data.filename, data.mimeType);
         break;
@@ -97,7 +103,6 @@ function doPost(e) {
 
 /**
  * 3. INISIALISASI DATABASE & 5 SHEET SPREADSHEET OTOMATIS
- * Jalankan fungsi ini pertama kali dari Apps Script Editor
  */
 function setupDatabase() {
   try {
@@ -109,7 +114,7 @@ function setupDatabase() {
         ["APP_NAME", CONFIG.APP_NAME, "Nama Resmi Aplikasi"],
         ["INSTANSI", "Kecamatan Pasirwangi", "Nama Instansi / Penyelenggara"],
         ["DEFAULT_KEGIATAN", "Peringatan HGN dan HUT ke-81 PGRI Tahun 2026", "Kegiatan Utama Aktif"],
-        ["VERSI_DB", "2.2", "Versi Struktur Database"]
+        ["VERSI_DB", "2.3", "Versi Struktur Database"]
       ],
       "TEMPLATE": [
         ["ID", "Nama Template", "Kategori", "Orientasi", "Lebar (mm)", "Tinggi (mm)", "Warna Latar", "URL Gambar Template", "Konfigurasi JSON", "Tanggal Dibuat"]
@@ -133,7 +138,6 @@ function setupDatabase() {
         var initialData = sheetsConfig[sheetName];
         sheet.getRange(1, 1, initialData.length, initialData[0].length).setValues(initialData);
 
-        // Styling header
         var headerRange = sheet.getRange(1, 1, 1, initialData[0].length);
         headerRange.setBackground("#0f172a");
         headerRange.setFontColor("#f8fafc");
@@ -181,6 +185,29 @@ function setupDatabase() {
         "25 November 2026",
         "Koordinator Pelaksana Utama",
         Utilities.formatDate(new Date(), "Asia/Jakarta", "yyyy-MM-dd HH:mm:ss")
+      ]);
+    }
+
+    // Seed default kegiatan jika KEGIATAN baru dibuat
+    var kSheet = ss.getSheetByName("KEGIATAN");
+    if (kSheet && kSheet.getLastRow() <= 1) {
+      kSheet.appendRow([
+        "keg-001",
+        "Peringatan HGN dan HUT ke-81 PGRI Tahun 2026",
+        "2026-11-20",
+        "2026-11-25",
+        "Kecamatan Pasirwangi, Garut",
+        "Upacara Akbar & Temu Pendidik Se-Kecamatan",
+        "Aktif"
+      ]);
+      kSheet.appendRow([
+        "keg-002",
+        "Seminar Nasional Penguatan Guru Profesional Abad 21",
+        "2026-11-22",
+        "2026-11-22",
+        "Gedung Guru Kecamatan",
+        "Diklat & Seminar Sertifikasi Kompetensi",
+        "Aktif"
       ]);
     }
 
@@ -258,14 +285,35 @@ function getAllData() {
       }
     }
 
+    // Ambil Kegiatan
+    var kegiatanList = [];
+    var kSheet = ss.getSheetByName("KEGIATAN");
+    if (kSheet && kSheet.getLastRow() > 1) {
+      var kValues = kSheet.getRange(2, 1, kSheet.getLastRow() - 1, 7).getValues();
+      for (var k = 0; k < kValues.length; k++) {
+        var kRow = kValues[k];
+        if (kRow[0]) {
+          kegiatanList.push({
+            id: String(kRow[0]),
+            nama: String(kRow[1]),
+            tanggalMulai: String(kRow[2]),
+            tanggalSelesai: String(kRow[3]),
+            lokasi: String(kRow[4]),
+            keterangan: String(kRow[5]),
+            status: String(kRow[6])
+          });
+        }
+      }
+    }
+
     // Ambil Pengaturan
     var settings = {};
     var sSheet = ss.getSheetByName("PENGATURAN");
     if (sSheet && sSheet.getLastRow() > 1) {
       var sValues = sSheet.getRange(2, 1, sSheet.getLastRow() - 1, 2).getValues();
-      for (var k = 0; k < sValues.length; k++) {
-        if (sValues[k][0]) {
-          settings[String(sValues[k][0])] = String(sValues[k][1]);
+      for (var m = 0; m < sValues.length; m++) {
+        if (sValues[m][0]) {
+          settings[String(sValues[m][0])] = String(sValues[m][1]);
         }
       }
     }
@@ -275,6 +323,7 @@ function getAllData() {
       data: {
         peserta: pesertaList,
         templates: templateList,
+        kegiatan: kegiatanList,
         settings: settings
       }
     };
@@ -365,7 +414,7 @@ function hapusDataPeserta(id) {
 }
 
 /**
- * 7. MENYIMPAN TEMPLATE ID CARD (DILENGKAPI URL GAMBAR TEMPLATE)
+ * 7. MENYIMPAN TEMPLATE ID CARD
  */
 function simpanDataTemplate(tpl) {
   try {
@@ -418,7 +467,115 @@ function simpanDataTemplate(tpl) {
 }
 
 /**
- * 8. SIMPAN FOTO KE GOOGLE DRIVE
+ * 8. MENYIMPAN DATA KEGIATAN
+ */
+function simpanDataKegiatan(k) {
+  try {
+    var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    var sheet = ss.getSheetByName("KEGIATAN");
+    if (!sheet) {
+      setupDatabase();
+      sheet = ss.getSheetByName("KEGIATAN");
+    }
+
+    var lastRow = sheet.getLastRow();
+    var existingRow = -1;
+
+    if (lastRow > 1 && k.id) {
+      var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+      for (var i = 0; i < ids.length; i++) {
+        if (ids[i][0] == k.id) {
+          existingRow = i + 2;
+          break;
+        }
+      }
+    }
+
+    var rowData = [
+      k.id || ("keg-" + Utilities.getUuid().substring(0, 6)),
+      k.nama,
+      k.tanggalMulai || "",
+      k.tanggalSelesai || "",
+      k.lokasi || "",
+      k.keterangan || "",
+      k.status || "Aktif"
+    ];
+
+    if (existingRow > 0) {
+      sheet.getRange(existingRow, 1, 1, rowData.length).setValues([rowData]);
+      catatLog("Perbarui Kegiatan", "Update kegiatan: " + k.nama, "Operator");
+    } else {
+      sheet.appendRow(rowData);
+      catatLog("Tambah Kegiatan", "Menambahkan kegiatan: " + k.nama, "Operator");
+    }
+
+    return { success: true, message: "Data kegiatan berhasil disimpan!", id: rowData[0] };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * 9. MENGHAPUS KEGIATAN
+ */
+function hapusDataKegiatan(id) {
+  try {
+    var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    var sheet = ss.getSheetByName("KEGIATAN");
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success: false, message: "Data kosong" };
+
+    var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < ids.length; i++) {
+      if (ids[i][0] == id) {
+        var rowNumber = i + 2;
+        sheet.deleteRow(rowNumber);
+        return { success: true, message: "Kegiatan berhasil dihapus." };
+      }
+    }
+    return { success: false, message: "ID kegiatan tidak ditemukan." };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * 10. SIMPAN PENGATURAN KE SHEET PENGATURAN
+ */
+function simpanPengaturan(settings) {
+  try {
+    var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    var sheet = ss.getSheetByName("PENGATURAN");
+    if (!sheet) {
+      setupDatabase();
+      sheet = ss.getSheetByName("PENGATURAN");
+    }
+
+    for (var key in settings) {
+      var lastRow = sheet.getLastRow();
+      var found = false;
+      if (lastRow > 1) {
+        var keys = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+        for (var i = 0; i < keys.length; i++) {
+          if (keys[i][0] == key) {
+            sheet.getRange(i + 2, 2).setValue(settings[key]);
+            found = true;
+            break;
+          }
+        }
+      }
+      if (!found) {
+        sheet.appendRow([key, settings[key], "Diperbarui dari Web App"]);
+      }
+    }
+    return { success: true, message: "Pengaturan berhasil disimpan ke Spreadsheet!" };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * 11. SIMPAN FOTO KE GOOGLE DRIVE
  */
 function simpanFotoKeDrive(base64Data, filename, mimeType) {
   try {
@@ -454,7 +611,7 @@ function simpanFotoKeDrive(base64Data, filename, mimeType) {
 }
 
 /**
- * 9. SIMPAN GAMBAR DESAIN TEMPLATE KE GOOGLE DRIVE
+ * 12. SIMPAN GAMBAR DESAIN TEMPLATE KE GOOGLE DRIVE
  */
 function simpanTemplateKeDrive(base64Data, filename, mimeType) {
   try {
@@ -490,7 +647,7 @@ function simpanTemplateKeDrive(base64Data, filename, mimeType) {
 }
 
 /**
- * 10. MENCATAT LOG AKTIVITAS KE SHEET LOG_AKTIVITAS
+ * 13. MENCATAT LOG AKTIVITAS KE SHEET LOG_AKTIVITAS
  */
 function catatLog(action, details, user) {
   try {

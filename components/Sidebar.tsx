@@ -51,7 +51,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Sparkles,
       badge: 'Instan',
       color: 'text-amber-400',
-      allowedRoles: ['Administrator', 'Operator'],
+      allowedRoles: ['Administrator', 'Operator', 'Viewer'],
     },
     {
       id: 'editor' as ActiveTab,
@@ -59,7 +59,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Palette,
       badge: templateCount > 0 ? `${templateCount}` : null,
       color: 'text-purple-400',
-      allowedRoles: ['Administrator'],
+      allowedRoles: ['Administrator', 'Operator', 'Viewer'],
     },
     {
       id: 'peserta' as ActiveTab,
