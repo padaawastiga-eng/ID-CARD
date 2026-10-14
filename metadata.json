@@ -1,0 +1,6 @@
+{
+  "name": "Desain Kartu Peserta & Name Tag Kegiatan",
+  "description": "Aplikasi pembuatan kartu tanda peserta kegiatan, name tag panitia acara, dan tiket seminar berbasis Google Spreadsheet.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
